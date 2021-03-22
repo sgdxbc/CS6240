@@ -7,9 +7,12 @@ def decode_audio(audio_binary):
     return tf.squeeze(audio, axis=-1)
 
 
+MIN_SAMPLE = 16000
+
+
 def get_spectrogram(waveform):
     # Padding for files with less than 16000 samples
-    zero_padding = tf.zeros([16000] - tf.shape(waveform), dtype=tf.float32)
+    zero_padding = tf.zeros([MIN_SAMPLE] - tf.shape(waveform), dtype=tf.float32)
 
     # Concatenate audio with padding so that all audio clips will be of the
     # same length
