@@ -106,7 +106,7 @@ model = models.Sequential(
         layers.Flatten(),
         layers.Dense(128, activation="relu"),
         layers.Dropout(0.5),
-        layers.Dense(num_labels),
+        layers.Dense(num_labels, activation="softmax"),
     ]
 )
 
