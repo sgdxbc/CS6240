@@ -3,7 +3,8 @@ import numpy as np
 
 
 def decode_audio(audio_binary):
-    audio, _ = tf.audio.decode_wav(audio_binary)
+    audio, sample_rate = tf.audio.decode_wav(audio_binary)
+    assert sample_rate == 16000, f'sample_rate: {sample_rate}'
     return tf.squeeze(audio, axis=-1)
 
 

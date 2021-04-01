@@ -4,27 +4,39 @@ from tensorflow.keras import losses, optimizers
 from utils import *
 
 # *** Configuration
+# common
 data_dir = Path() / "data" / "mini_speech_commands"
-audio_path = data_dir / "right" / "0ab3b47d_nohash_0.wav"
 adv_path = Path() / "right2left.wav"
-mix_path = Path() / "right2left(mix).wav"
+mix_name = "right2left(mix)"
 model_path = Path() / "classifier_model_42"
-target = "left"
-alpha = 0.5
+alpha = 5.0
+# flipping
 adv_sample_number = 2000  # ~50ms
 adv_delay_interval = 50  # ~1ms
+target_map = [
+    (data_dir / "right" / "0ab3b47d_nohash_0.wav", "left"),
+    (data_dir / "left" / "0b09edd3_nohash_0.wav", "right"),
+]
 # *** Configuration End
 
 physical_devices = tf.config.list_physical_devices("GPU")
 tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
 commands = get_commands(data_dir)
-target = target == commands
 model = tf.keras.models.load_model(str(model_path))
-audio, sample_rate = tf.audio.decode_wav(tf.io.read_file(str(audio_path)))
-audio = tf.squeeze(audio, -1)
-adv = tf.Variable(tf.random.normal([adv_sample_number]))
+audio_target_map = [
+    (decode_audio(tf.io.read_file(str(path))), commands == command)
+    for path, command in target_map
+]
 mix_per_audio = (MIN_SAMPLE - adv_sample_number) // adv_delay_interval
+audio_list, target_list = [], []
+for audio, target in audio_target_map:
+    for i in range(mix_per_audio):
+        audio_list.append(audio)
+        target_list.append(target)
+audio_list, target_list = tf.stack(audio_list), tf.stack(target_list)
+
+adv = tf.Variable(tf.random.normal([adv_sample_number]))
 
 
 def pred(mix):
@@ -34,7 +46,7 @@ def pred(mix):
     return model(spec, training=False)
 
 
-def mix(audio):
+def mix():
     padded = tf.concat(
         [
             adv,
@@ -42,16 +54,18 @@ def mix(audio):
         ],
         0,
     )
-    return tf.stack(
+    padded_list = tf.stack(
         [
-            audio + tf.roll(padded, adv_delay_interval * i, 0)
+            tf.roll(padded, adv_delay_interval * i, 0)
             for i in range(mix_per_audio)
+            for _ in range(len(audio_target_map))
         ]
     )
+    return audio_list + padded_list
 
 
 def loss_fn():
-    dist = tf.keras.losses.mse(target, pred(mix(audio)))
+    dist = tf.keras.losses.mse(target_list, pred(mix()))
     norm = tf.keras.losses.mse(tf.zeros([adv_sample_number]), adv)
     return tf.math.reduce_mean(dist) + alpha * norm
 
@@ -74,14 +88,19 @@ opt_loop(loss_fn, adv)
 print("previous")
 print(pred(tf.expand_dims(audio, 0))[0])
 print("after")
-print(pred(mix(audio))[:10])
+print(pred(mix())[:10])
 
+sample_rate = 16000
 tf.io.write_file(
     str(adv_path), tf.audio.encode_wav(tf.expand_dims(adv, -1), sample_rate)
 )
 tf.io.write_file(
-    str(mix_path),
+    str(Path() / (mix_name + "-1.wav")),
+    tf.audio.encode_wav(tf.expand_dims(mix()[mix_per_audio // 2], -1), sample_rate),
+)
+tf.io.write_file(
+    str(Path() / (mix_name + "-2.wav")),
     tf.audio.encode_wav(
-        tf.expand_dims(mix(audio)[mix_per_audio // 2], -1), sample_rate
+        tf.expand_dims(mix()[mix_per_audio + mix_per_audio // 2], -1), sample_rate
     ),
 )

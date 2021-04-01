@@ -4,7 +4,7 @@ from utils import *
 
 data_dir = Path() / "data" / "mini_speech_commands"
 # audio_path = data_dir / "right" / "0ab3b47d_nohash_0.wav"
-audio_path = Path() / "right2left(mix).wav"
+audio_path = Path() / "right2left(mix)-2.wav"
 model_path = Path() / "classifier_model_42"
 
 spectrogram = get_spectrogram(decode_audio(tf.io.read_file(str(audio_path))))
