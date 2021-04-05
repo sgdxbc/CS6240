@@ -3,3 +3,5 @@ data
 .ipynb_checkpoints
 classifier_model*
 *.wav
+*.pyc
+.vscode
