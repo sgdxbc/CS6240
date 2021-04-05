@@ -7,11 +7,11 @@ from utils import *
 data_dir = Path() / "data" / "mini_speech_commands"
 adv_path = Path() / "adv.wav"
 model_path = Path() / "classifier_model_42"
-alpha = 5.0
-train_commands_per_class = 5
+alpha = 2.0
+train_commands_per_class = 2
 val_commands_per_class = 10
 # flipping
-adv_sample_number = 50 * (SAMPLE_RATE // 1000)
+adv_sample_number = 110 * (SAMPLE_RATE // 1000)
 adv_delay_interval = 10 * (SAMPLE_RATE // 1000)
 target_map = [("left", "right"), ("right", "left")]
 # *** Configuration End
@@ -38,9 +38,9 @@ def get_base(index_range, audio=True):
     return tf.stack(
         [
             audio_map[origin][index] if audio else commands == target
-            for _ in range(mix_per_audio)
-            for index in index_range
             for origin, target in target_map
+            for index in index_range
+            for _ in range(mix_per_audio)
         ]
     )
 
