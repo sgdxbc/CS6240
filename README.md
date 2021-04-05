@@ -7,4 +7,10 @@ To train audio command classifier:
 * Edit `seed` and `save_path` near the top of the code.
 * Run `python train.py`.
 
+To generate adversarial sample against trained classifier:
+* Open `generate.py`.
+* Edit parameters at the top as needed and run.
+
+The predict and mixing script is been refactoring.
+
 Work in progress.

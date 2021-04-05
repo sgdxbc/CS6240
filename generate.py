@@ -1,4 +1,5 @@
 from pathlib import Path
+from collections import deque
 import tensorflow as tf
 from utils import *
 
@@ -7,11 +8,11 @@ from utils import *
 data_dir = Path() / "data" / "mini_speech_commands"
 adv_path = Path() / "adv.wav"
 model_path = Path() / "classifier_model_42"
-alpha = 2.0
-train_commands_per_class = 2
+alpha = 5.0
+train_commands_per_class = 8
 val_commands_per_class = 10
 # flipping
-adv_sample_number = 110 * (SAMPLE_RATE // 1000)
+adv_sample_number = 500 * (SAMPLE_RATE // 1000)
 adv_delay_interval = 10 * (SAMPLE_RATE // 1000)
 target_map = [("left", "right"), ("right", "left")]
 # *** Configuration End
@@ -121,13 +122,13 @@ def accuracy(y, fx):
 
 def opt_loop(loss_fn, var):
     opt = tf.keras.optimizers.Adam()
-    prev_loss = float("inf")
+    prev_loss = deque()
     for i in range(1000000):
         opt.minimize(loss_fn, [var])
         loss = loss_fn()
-        if tf.abs(loss - prev_loss) < 1e-9:
+        prev_loss.append(loss)
+        if len(prev_loss) == 100 and tf.abs(prev_loss.popleft() - loss) < 1e-9:
             break
-        prev_loss = loss
         if i % 100 == 0:
             print(f"i = {i}, loss = {loss.numpy()}")
             norm = tf.keras.losses.mse(tf.zeros([adv_sample_number]), adv)
