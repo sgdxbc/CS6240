@@ -5,15 +5,15 @@ from utils import *
 # *** Configuration
 # common
 data_dir = Path() / "data" / "mini_speech_commands"
-adv_path = Path() / "right2left.wav"
+adv_path = Path() / "adv.wav"
 model_path = Path() / "classifier_model_42"
 alpha = 5.0
-train_commands_per_class = 1
+train_commands_per_class = 5
 val_commands_per_class = 10
 # flipping
 adv_sample_number = 50 * (SAMPLE_RATE // 1000)
 adv_delay_interval = 10 * (SAMPLE_RATE // 1000)
-target_pairs = [("left", "right"), ("right", "left")]
+target_map = [("left", "right"), ("right", "left")]
 # *** Configuration End
 
 physical_devices = tf.config.list_physical_devices("GPU")
@@ -22,32 +22,69 @@ tf.config.experimental.set_memory_growth(physical_devices[0], True)
 commands = get_commands(data_dir)
 model = tf.keras.models.load_model(str(model_path))
 mix_per_audio = (SAMPLE_RATE - adv_sample_number) // adv_delay_interval
-target_map = {origin: target == commands for origin, target in target_pairs}
 audio_map = {
     origin: [
         decode_audio(tf.io.read_file(filename))
         for i, filename in enumerate(tf.io.gfile.glob(str(data_dir / origin) + "/*"))
         if i < train_commands_per_class + val_commands_per_class
     ]
-    for origin, _ in target_pairs
+    for origin, _ in target_map
 }
-# audio_per_class = len(next(iter(audio_map.values())))
-# assert all(len(audio_list) == audio_per_class for audio_list in audio_map.values())
+
 adv = tf.Variable(tf.random.normal([adv_sample_number]))
+
+
+def get_base(index_range, audio=True):
+    return tf.stack(
+        [
+            audio_map[origin][index] if audio else commands == target
+            for _ in range(mix_per_audio)
+            for index in index_range
+            for origin, target in target_map
+        ]
+    )
+
+
+audio_base = tf.concat(
+    [
+        get_base(range(train_commands_per_class)),
+        get_base(
+            range(
+                train_commands_per_class,
+                train_commands_per_class + val_commands_per_class,
+            )
+        ),
+    ],
+    axis=0,
+)
+truth_base = tf.concat(
+    [
+        get_base(range(train_commands_per_class), False),
+        get_base(
+            range(
+                train_commands_per_class,
+                train_commands_per_class + val_commands_per_class,
+            ),
+            False,
+        ),
+    ],
+    axis=0,
+)
+
+
+def get_mask(count):
+    row = tf.concat([adv, tf.zeros([SAMPLE_RATE - adv_sample_number])], axis=0)
+    rows = tf.stack(
+        [
+            tf.roll(row, shift=step * adv_delay_interval, axis=0)
+            for step in range(mix_per_audio)
+        ]
+    )
+    return tf.tile(rows, [count, 1])
 
 
 def pred(mix):
     return model(tf.expand_dims(extract_features(mix), -1), training=False)
-
-
-def single_x_y(origin, index, delay):
-    return (
-        audio_map[origin][index]
-        + tf.roll(
-            tf.concat([adv, tf.zeros([SAMPLE_RATE - adv_sample_number])], 0), delay, 0
-        ),
-        target_map[origin],
-    )
 
 
 print(
@@ -57,21 +94,17 @@ print(
 
 
 def x_y(training):
-    r = (
-        range(train_commands_per_class)
-        if training
-        else range(
-            train_commands_per_class, train_commands_per_class + val_commands_per_class
+    sep = len(target_map) * train_commands_per_class * mix_per_audio
+    if training:
+        return (
+            audio_base[:sep] + get_mask(len(target_map) * train_commands_per_class),
+            truth_base[:sep],
         )
-    )
-    x, y = [], []
-    for origin in target_map:
-        for i in r:
-            for delay_step in range(mix_per_audio):
-                the_x, the_y = single_x_y(origin, i, delay_step * adv_delay_interval)
-                x.append(the_x)
-                y.append(the_y)
-    return tf.stack(x), tf.stack(y)
+    else:
+        return (
+            audio_base[sep:] + get_mask(len(target_map) * val_commands_per_class),
+            truth_base[sep:],
+        )
 
 
 def loss_fn(training=True):
