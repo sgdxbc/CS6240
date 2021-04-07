@@ -4,17 +4,16 @@ import tensorflow as tf
 from utils import *
 
 # *** Configuration
-# common
 data_dir = Path() / "data" / "mini_speech_commands"
-adv_path = Path() / "adv.wav"
 model_path = Path() / "classifier_model_42"
-alpha = 5.0
-train_commands_per_class = 8
+target_map = [("left", "right"), ("up", "down")]
+train_commands_per_class = 500
 val_commands_per_class = 10
-# flipping
-adv_sample_number = 500 * (SAMPLE_RATE // 1000)
+alpha = 1.0
+adv_sample_number = 600 * (SAMPLE_RATE // 1000)
 adv_delay_interval = 10 * (SAMPLE_RATE // 1000)
-target_map = [("left", "right"), ("right", "left")]
+delay_sample_number_per_epoch = 50
+adv_path = Path() / "adv.wav"
 # *** Configuration End
 
 physical_devices = tf.config.list_physical_devices("GPU")
@@ -34,113 +33,93 @@ audio_map = {
 
 adv = tf.Variable(tf.random.normal([adv_sample_number]))
 
+xs, ys, val_xs = [], [], []
+val_yi = []
+for origin, target in target_map:
+    for index, audio in enumerate(audio_map[origin]):
+        if index < train_commands_per_class:
+            xs.append(audio)
+            ys.append(commands == target)
+        else:
+            val_xs.append(audio)
+            val_yi.append(tf.argmax(commands == target))
 
-def get_base(index_range, audio=True):
-    return tf.stack(
-        [
-            audio_map[origin][index] if audio else commands == target
-            for origin, target in target_map
-            for index in index_range
-            for _ in range(mix_per_audio)
-        ]
+x_mat, y_mat = tf.stack(xs), tf.stack(ys)
+val_x_mat = tf.stack(val_xs)
+val_yi = tf.convert_to_tensor(val_yi)
+
+
+delay_of_this_batch = 0
+
+
+def mix(x_mat):
+    padded = tf.roll(
+        tf.concat([adv, tf.zeros([SAMPLE_RATE - adv_sample_number])], axis=0),
+        shift=delay_of_this_batch,
+        axis=0,
     )
-
-
-audio_base = tf.concat(
-    [
-        get_base(range(train_commands_per_class)),
-        get_base(
-            range(
-                train_commands_per_class,
-                train_commands_per_class + val_commands_per_class,
-            )
-        ),
-    ],
-    axis=0,
-)
-truth_base = tf.concat(
-    [
-        get_base(range(train_commands_per_class), False),
-        get_base(
-            range(
-                train_commands_per_class,
-                train_commands_per_class + val_commands_per_class,
-            ),
-            False,
-        ),
-    ],
-    axis=0,
-)
-
-
-def get_mask(count):
-    row = tf.concat([adv, tf.zeros([SAMPLE_RATE - adv_sample_number])], axis=0)
-    rows = tf.stack(
-        [
-            tf.roll(row, shift=step * adv_delay_interval, axis=0)
-            for step in range(mix_per_audio)
-        ]
-    )
-    return tf.tile(rows, [count, 1])
+    return x_mat + tf.repeat([padded], repeats=[x_mat.shape[0]], axis=0)
 
 
 def pred(mix):
     return model(tf.expand_dims(extract_features(mix), -1), training=False)
 
 
-print(
-    f"predict size: {len(target_map) * train_commands_per_class * mix_per_audio}(train) "
-    + f"{len(target_map) * val_commands_per_class * mix_per_audio}(val)"
-)
-
-
-def x_y(training):
-    sep = len(target_map) * train_commands_per_class * mix_per_audio
-    if training:
-        return (
-            audio_base[:sep] + get_mask(len(target_map) * train_commands_per_class),
-            truth_base[:sep],
-        )
-    else:
-        return (
-            audio_base[sep:] + get_mask(len(target_map) * val_commands_per_class),
-            truth_base[sep:],
-        )
-
-
-def loss_fn(training=True):
-    x, y = x_y(training)
+def loss_fn():
+    x, y = mix(x_mat), y_mat
     dist = tf.keras.losses.mse(y, pred(x))
     norm = tf.keras.losses.mse(tf.zeros([adv_sample_number]), adv)
     return tf.math.reduce_mean(dist) + alpha * norm
 
 
-def accuracy(y, fx):
-    truth, pred = tf.argmax(y, axis=1), tf.argmax(fx, axis=1)
-    return len(truth[truth == pred]) / len(truth)
+def accuracy(yi, x):
+    truth, predicate = yi, tf.argmax(pred(x), axis=1)
+    return len(truth[truth == predicate]) / len(truth)
 
 
-def opt_loop(loss_fn, var):
-    opt = tf.keras.optimizers.Adam()
+opt = tf.keras.optimizers.Adam()
+
+
+def opt_step():
+    global delay_of_this_batch
+    losses = []
+    for _ in range(delay_sample_number_per_epoch):
+        delay_of_this_batch = tf.random.uniform(
+            [], maxval=SAMPLE_RATE - adv_sample_number, dtype=tf.int32
+        )
+        opt.minimize(loss_fn, [adv])
+        losses.append(loss_fn())
+    return tf.math.reduce_max(losses)
+
+
+def opt_loop():
+    train_yi = tf.argmax(y_mat, axis=1)
     prev_loss = deque()
     for i in range(1000000):
-        opt.minimize(loss_fn, [var])
-        loss = loss_fn()
-        prev_loss.append(loss)
-        if len(prev_loss) == 100 and tf.abs(prev_loss.popleft() - loss) < 1e-9:
-            break
-        if i % 100 == 0:
-            print(f"i = {i}, loss = {loss.numpy()}")
+        loss = opt_step()
+        prev_loss.append(float(loss.numpy()))
+        if len(prev_loss) > 3:
+            prev_loss.popleft()
+            if tf.math.reduce_max(prev_loss) - tf.math.reduce_min(prev_loss) < 1e-5:
+                break
+        if i % 1 == 0:
+            print(f"i = {i}, loss_max = {loss.numpy()}")
             norm = tf.keras.losses.mse(tf.zeros([adv_sample_number]), adv)
             print(f"norm = {norm.numpy()}")
-            train_x, train_y = x_y(True)
-            val_x, val_y = x_y(False)
+
+            train_acc_list, val_acc_list = [], []
+            for delay_step in range(mix_per_audio):
+                global delay_of_this_batch
+                delay_of_this_batch = delay_step * adv_delay_interval
+                train_mixed, val_mixed = mix(x_mat), mix(val_x_mat)
+                train_acc_list.append(accuracy(train_yi, train_mixed))
+                val_acc_list.append(accuracy(val_yi, val_mixed))
             print(
-                f"acc(train) = {accuracy(train_y, pred(train_x))}, acc(val) = {accuracy(val_y, pred(val_x))}"
+                f"acc(train) = {tf.math.reduce_mean(train_acc_list)}, acc(val) = {tf.math.reduce_mean(val_acc_list)}"
             )
 
 
-opt_loop(loss_fn, adv)
+opt_loop()
 
 tf.io.write_file(
     str(adv_path), tf.audio.encode_wav(tf.expand_dims(adv, -1), SAMPLE_RATE)
