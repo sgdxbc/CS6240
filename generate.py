@@ -6,13 +6,14 @@ from utils import *
 # *** Configuration
 data_dir = Path() / "data" / "mini_speech_commands"
 model_path = Path() / "classifier_model_42"
-target_map = [("left", "right"), ("up", "down")]
+target_map = [("left", "right"), ("right", "left")]
 train_commands_per_class = 500
 val_commands_per_class = 10
 alpha = 1.0
 adv_sample_number = 600 * (SAMPLE_RATE // 1000)
 adv_delay_interval = 10 * (SAMPLE_RATE // 1000)
-delay_sample_number_per_epoch = 50
+delay_sample_number_per_epoch = 2  # linear increase memory
+stop_when_no_progress_in = 10
 adv_path = Path() / "adv.wav"
 # *** Configuration End
 
@@ -44,21 +45,26 @@ for origin, target in target_map:
             val_xs.append(audio)
             val_yi.append(tf.argmax(commands == target))
 
-x_mat, y_mat = tf.stack(xs), tf.stack(ys)
+x_mat = tf.tile(tf.stack(xs), [delay_sample_number_per_epoch, 1])
+y_mat = tf.tile(tf.stack(ys), [delay_sample_number_per_epoch, 1])
 val_x_mat = tf.stack(val_xs)
 val_yi = tf.convert_to_tensor(val_yi)
 
-
-delay_of_this_batch = 0
+delays_of_this_epoch = None
 
 
 def mix(x_mat):
-    padded = tf.roll(
-        tf.concat([adv, tf.zeros([SAMPLE_RATE - adv_sample_number])], axis=0),
-        shift=delay_of_this_batch,
-        axis=0,
+    padded = tf.stack(
+        [
+            tf.roll(
+                tf.concat([adv, tf.zeros([SAMPLE_RATE - adv_sample_number])], axis=0),
+                shift=delay,
+                axis=0,
+            )
+            for delay in delays_of_this_epoch
+        ]
     )
-    return x_mat + tf.repeat([padded], repeats=[x_mat.shape[0]], axis=0)
+    return x_mat + tf.tile(padded, [x_mat.shape[0] // delays_of_this_epoch.shape[0], 1])
 
 
 def pred(mix):
@@ -81,37 +87,41 @@ opt = tf.keras.optimizers.Adam()
 
 
 def opt_step():
-    global delay_of_this_batch
-    losses = []
-    for _ in range(delay_sample_number_per_epoch):
-        delay_of_this_batch = tf.random.uniform(
-            [], maxval=SAMPLE_RATE - adv_sample_number, dtype=tf.int32
-        )
-        opt.minimize(loss_fn, [adv])
-        losses.append(loss_fn())
-    return tf.math.reduce_max(losses)
+    global delays_of_this_epoch
+    delays_of_this_epoch = tf.random.uniform(
+        [delay_sample_number_per_epoch],
+        maxval=SAMPLE_RATE - adv_sample_number,
+        dtype=tf.int32,
+    )
+    opt.minimize(loss_fn, [adv])
+    return loss_fn()
 
 
 def opt_loop():
-    train_yi = tf.argmax(y_mat, axis=1)
+    train_yi = tf.argmax(y_mat[: train_commands_per_class * len(target_map)], axis=1)
     prev_loss = deque()
     for i in range(1000000):
         loss = opt_step()
         prev_loss.append(float(loss.numpy()))
-        if len(prev_loss) > 3:
+        if len(prev_loss) > stop_when_no_progress_in:
             prev_loss.popleft()
-            if tf.math.reduce_max(prev_loss) - tf.math.reduce_min(prev_loss) < 1e-5:
+            if tf.math.reduce_min(prev_loss) == prev_loss[0]:
                 break
         if i % 1 == 0:
-            print(f"i = {i}, loss_max = {loss.numpy()}")
+            print(f"i = {i}, loss = {loss.numpy()}")
             norm = tf.keras.losses.mse(tf.zeros([adv_sample_number]), adv)
             print(f"norm = {norm.numpy()}")
 
             train_acc_list, val_acc_list = [], []
             for delay_step in range(mix_per_audio):
-                global delay_of_this_batch
-                delay_of_this_batch = delay_step * adv_delay_interval
-                train_mixed, val_mixed = mix(x_mat), mix(val_x_mat)
+                global delays_of_this_epoch
+                delays_of_this_epoch = tf.convert_to_tensor(
+                    [delay_step * adv_delay_interval]
+                )
+                train_mixed, val_mixed = (
+                    mix(x_mat[: train_commands_per_class * len(target_map)]),
+                    mix(val_x_mat),
+                )
                 train_acc_list.append(accuracy(train_yi, train_mixed))
                 val_acc_list.append(accuracy(val_yi, val_mixed))
             print(
