@@ -12,7 +12,7 @@ val_commands_per_class = 10
 alpha = 1.0
 adv_sample_number = 600 * (SAMPLE_RATE // 1000)
 adv_delay_interval = 10 * (SAMPLE_RATE // 1000)
-delay_sample_number_per_batch = 6  # linear increase memory
+delay_sample_number_per_batch = 1  # linear increase memory
 batch_per_epoch = 100 // delay_sample_number_per_batch
 stop_when_no_progress_in = 20
 adv_path = Path() / "adv.wav"
@@ -77,7 +77,7 @@ def loss_fn():
     x, y = mix(x_mat), y_mat
     dist = tf.keras.losses.mse(y, pred(x))
     norm = tf.keras.losses.mse(tf.zeros([adv_sample_number]), adv)
-    return tf.math.reduce_mean(dist) + alpha * norm
+    return tf.math.reduce_sum(dist) + alpha * norm
 
 
 def accuracy(yi, x):
@@ -90,15 +90,15 @@ opt = tf.keras.optimizers.Adam()
 
 def opt_step():
     global delays_of_this_batch
-    # for _ in range(batch_per_epoch):
-    #     delays_of_this_batch = tf.random.uniform(
-    #         [delay_sample_number_per_batch],
-    #         maxval=SAMPLE_RATE - adv_sample_number,
-    #         dtype=tf.int32,
-    #     )
-    for i in range(batch_per_epoch):
-        j = delay_sample_number_per_batch
-        delays_of_this_batch = tf.convert_to_tensor([(j * i + k) * adv_delay_interval for k in range(j)])
+    for _ in range(batch_per_epoch):
+        delays_of_this_batch = tf.random.uniform(
+            [delay_sample_number_per_batch],
+            maxval=SAMPLE_RATE - adv_sample_number,
+            dtype=tf.int32,
+        )
+    # for i in range(batch_per_epoch):
+    #     j = delay_sample_number_per_batch
+    #     delays_of_this_batch = tf.convert_to_tensor([(j * i + k) * adv_delay_interval for k in range(j)])
         opt.minimize(loss_fn, [adv])
     return loss_fn()
 
