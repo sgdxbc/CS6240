@@ -12,8 +12,8 @@ val_commands_per_class = 10
 alpha = 1.0
 adv_sample_number = 600 * (SAMPLE_RATE // 1000)
 adv_delay_interval = 10 * (SAMPLE_RATE // 1000)
-delay_sample_number_per_epoch = 2  # linear increase memory
-stop_when_no_progress_in = 10
+delay_sample_number_per_epoch = 1  # linear increase memory
+stop_when_no_progress_in = 1000 // delay_sample_number_per_epoch
 adv_path = Path() / "adv.wav"
 # *** Configuration End
 

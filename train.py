@@ -1,5 +1,6 @@
 import os
 import pathlib
+import random
 
 import numpy as np
 import tensorflow as tf
@@ -13,6 +14,7 @@ from utils import *
 seed = 42
 tf.random.set_seed(seed)
 np.random.seed(seed)
+random.seed(seed)
 save_path = pathlib.Path() / "classifier_model_42"
 
 data_dir = pathlib.Path("data/mini_speech_commands")
@@ -59,7 +61,7 @@ def get_waveform_and_label(file_path):
     return waveform, label
 
 
-AUTOTUNE = tf.data.AUTOTUNE
+# AUTOTUNE = tf.data.AUTOTUNE
 
 
 def get_spectrogram_and_label_id(audio, label):
@@ -71,8 +73,8 @@ def get_spectrogram_and_label_id(audio, label):
 
 def preprocess_dataset(files):
     files_ds = tf.data.Dataset.from_tensor_slices(files)
-    output_ds = files_ds.map(get_waveform_and_label, num_parallel_calls=AUTOTUNE)
-    output_ds = output_ds.map(get_spectrogram_and_label_id, num_parallel_calls=AUTOTUNE)
+    output_ds = files_ds.map(get_waveform_and_label)
+    output_ds = output_ds.map(get_spectrogram_and_label_id)
     return output_ds
 
 
@@ -83,8 +85,8 @@ test_ds = preprocess_dataset(test_files)
 batch_size = 64
 train_ds = train_ds.batch(batch_size)
 val_ds = val_ds.batch(batch_size)
-train_ds = train_ds.cache().prefetch(AUTOTUNE)
-val_ds = val_ds.cache().prefetch(AUTOTUNE)
+train_ds = train_ds.cache()#.prefetch(AUTOTUNE)
+val_ds = val_ds.cache()#.prefetch(AUTOTUNE)
 
 for spectrogram, _ in spectrogram_ds.take(1):
     input_shape = spectrogram.shape
@@ -117,7 +119,7 @@ model.compile(
     metrics=["accuracy"],
 )
 
-EPOCHS = 20
+EPOCHS = 50
 history = model.fit(
     train_ds,
     validation_data=val_ds,
