@@ -77,7 +77,7 @@ def loss_fn():
     x, y = mix(x_mat), y_mat
     dist = tf.keras.losses.mse(y, pred(x))
     norm = tf.keras.losses.mse(tf.zeros([adv_sample_number]), adv)
-    return tf.math.reduce_sum(dist) + alpha * norm
+    return tf.math.reduce_sum(dist) + alpha * train_commands_per_class * delay_sample_number_per_batch * norm
 
 
 def accuracy(yi, x):
