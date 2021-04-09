@@ -15,7 +15,7 @@ seed = 42
 tf.random.set_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
-save_path = pathlib.Path() / "classifier_model_42"
+save_path = pathlib.Path() / "classifier_model_44"
 
 data_dir = pathlib.Path("data/mini_speech_commands")
 if not data_dir.exists():

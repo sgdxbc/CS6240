@@ -5,15 +5,15 @@ from utils import *
 
 # *** Configuration
 data_dir = Path() / "data" / "mini_speech_commands"
-model_path = Path() / "classifier_model_42"
-target_map = [("left", "right"), ("right", "left")]
-train_commands_per_class = 20
+model_path = Path() / "classifier_model_44"
+target_map = [("up", "down"), ("down", "up")]
+train_commands_per_class = 200
 val_commands_per_class = 10
 alpha = 1.0
 adv_sample_number = 600 * (SAMPLE_RATE // 1000)
 adv_delay_interval = 10 * (SAMPLE_RATE // 1000)
-delay_sample_number_per_batch = 50  # linear increase memory
-batch_per_epoch = 200 // delay_sample_number_per_batch
+delay_sample_number_per_batch = 20  # linear increase memory
+batch_per_epoch = 500 // delay_sample_number_per_batch
 stop_when_no_progress_in = 20
 adv_path = Path() / "adv.wav"
 # *** Configuration End
@@ -80,8 +80,8 @@ def loss_fn():
     dist = tf.keras.losses.mse(y, pred(x))
     norm = tf.keras.losses.mse(tf.zeros([adv_sample_number]), adv)
     return (
-        tf.math.reduce_sum(dist)
-        + alpha * train_commands_per_class * delay_sample_number_per_batch * norm
+        tf.math.reduce_mean(dist)
+        + alpha * norm
     )
 
 
@@ -95,19 +95,19 @@ opt = tf.keras.optimizers.Adam()
 
 def opt_step():
     global delays_of_this_batch
-    # for _ in range(batch_per_epoch):
-    #     delays_of_this_batch = (
-    #         tf.random.uniform(
-    #             [delay_sample_number_per_batch],
-    #             maxval=SAMPLE_RATE - adv_sample_number,
-    #             dtype=tf.int32,
-    #         )
-    #         // adv_delay_interval
-    #         * adv_delay_interval
-    #     )
-    for i in range(0, SAMPLE_RATE - adv_sample_number, delay_sample_number_per_batch):
-        j = min(i + delay_sample_number_per_batch, SAMPLE_RATE - adv_sample_number)
-        delays_of_this_batch = tf.convert_to_tensor(range(i, j))
+    for _ in range(batch_per_epoch):
+        delays_of_this_batch = (
+            tf.random.uniform(
+                [delay_sample_number_per_batch],
+                maxval=SAMPLE_RATE - adv_sample_number,
+                dtype=tf.int32,
+            )
+            // adv_delay_interval
+            * adv_delay_interval
+        )
+    # for i in range(0, SAMPLE_RATE - adv_sample_number, delay_sample_number_per_batch):
+    #     j = min(i + delay_sample_number_per_batch, SAMPLE_RATE - adv_sample_number)
+    #     delays_of_this_batch = tf.convert_to_tensor(range(i, j))
         opt.minimize(loss_fn, [adv])
     return loss_fn()
 
