@@ -4,18 +4,20 @@ from utils import *
 
 
 data_dir = Path() / "data" / "mini_speech_commands"
-model_path = Path() / "classifier_model_42"
+model_path = Path() / "classifier_model_45"
 music_path = Path() / "underlay.wav"
 perturbated_path = Path() / "pert.wav"
 target_map = [("left", "right")]
-train_count = 20
+train_count = 1
 val_count = 10
 alpha = 1.0
 adv_chunk_length = 200 * (SAMPLE_RATE // 1000)
 chunk_count = 3
-adv_delay_interval = 10 * (SAMPLE_RATE // 1000)
-delay_per_batch = 1
-batch_per_epoch = 1
+# adv_delay_interval = 10 * (SAMPLE_RATE // 1000)
+adv_delay_interval = adv_chunk_length
+adv_delay_interval2 = 10 * (SAMPLE_RATE // 1000)
+delay_per_batch = 2
+batch_per_epoch = 10
 opt = tf.keras.optimizers.Adam()
 stop_when_no_progress_in = 20
 
@@ -27,10 +29,11 @@ for i in range(len(physical_devices)):
 commands = get_commands(data_dir)
 model = tf.keras.models.load_model(str(model_path))
 music, sample_rate = tf.audio.decode_wav(tf.io.read_file(str(music_path)))
-print(music.shape)
 assert sample_rate == SAMPLE_RATE
 music = tf.cast(tf.squeeze(music, axis=-1), tf.float32)
-music = music[: chunk_count * (SAMPLE_RATE + adv_chunk_length) + SAMPLE_RATE]
+# |<------------------last chuck------------------>|<-SAMPLE_RATE - adv_chuck_length->|
+# |<-SAMPLE_RATE - adv_chuck_length->|<-adv_chuck->|
+music = music[: chunk_count * SAMPLE_RATE + (SAMPLE_RATE - adv_chunk_length)]
 audio_map = {
     origin: [
         decode_audio(tf.io.read_file(filename))
@@ -40,21 +43,22 @@ audio_map = {
     for origin, _ in target_map
 }
 
-adv = tf.Variable(tf.random.normal([adv_chunk_length * chunk_count]))
+# adv = tf.Variable(tf.random.normal([adv_chunk_length * chunk_count]))
+adv = tf.Variable(tf.zeros([adv_chunk_length * chunk_count]))
+
+zero_length = SAMPLE_RATE - adv_chunk_length
+chuck_length = zero_length + adv_chunk_length + zero_length
 
 
 def underlay_mask(chuck_index, delays, count):
     music_chunk = music[
-        chuck_index
-        * (SAMPLE_RATE + adv_chunk_length) : (chuck_index + 1)
-        * (SAMPLE_RATE + adv_chunk_length)
-        + SAMPLE_RATE
+        chuck_index * SAMPLE_RATE : chuck_index * SAMPLE_RATE + chuck_length
     ]
     adv_chunk = tf.concat(
         [
-            tf.zeros([SAMPLE_RATE]),
+            tf.zeros([zero_length]),
             adv[chuck_index * adv_chunk_length : (chuck_index + 1) * adv_chunk_length],
-            tf.zeros([SAMPLE_RATE]),
+            tf.zeros([zero_length]),
         ],
         axis=0,
     )
@@ -65,12 +69,31 @@ def underlay_mask(chuck_index, delays, count):
     return tf.repeat(mask_group, repeats=count, axis=0)
 
 
+def underlay_total():
+    return music + tf.concat(
+        [
+            *[
+                tf.concat(
+                    [
+                        tf.zeros([zero_length]),
+                        adv[i * adv_chunk_length : (i + 1) * adv_chunk_length],
+                    ],
+                    axis=0,
+                )
+                for i in range(chunk_count)
+            ],
+            tf.zeros([zero_length]),
+        ],
+        axis=0,
+    )
+
+
 xs, ys, val_xs, val_yi = [], [], [], []
 for origin, target in target_map:
     for index, audio in enumerate(audio_map[origin]):
         if index < train_count:
             xs.append(audio)
-            ys.append(commands == target)
+            ys.append(tf.cast(commands == target, dtype=tf.float32))
         else:
             val_xs.append(audio)
             val_yi.append(tf.argmax(commands == target))
@@ -100,19 +123,18 @@ def loss_fn(delays):
     return last_loss
 
 
-def accuracy(x_mat, yi):
+def accuracy(x_mat, yi, interval=adv_delay_interval):
     accuracy_list = []
-    for delay in range(0, adv_chunk_length + SAMPLE_RATE, adv_delay_interval):
-        if delay == 0:
-            continue
-        for chunk_index in range(chunk_count):
-            p = tf.argmax(
-                pred(
-                    x_mat
-                    + underlay_mask(chunk_index, tf.constant([delay]), x_mat.shape[0])
-                )
+    underlay = underlay_total()
+    for delay in range(0, underlay.shape[0] - SAMPLE_RATE, interval):
+        xx = (
+            tf.tile(
+                [underlay[delay : delay + SAMPLE_RATE]], multiples=[x_mat.shape[0], 1]
             )
-            accuracy_list.append(tf.math.count_nonzero(p == yi) / len(yi))
+            + x_mat
+        )
+        p = tf.argmax(pred(xx), axis=1)
+        accuracy_list.append(tf.math.count_nonzero(p == yi) / len(yi))
     return tf.math.reduce_mean(accuracy_list)
 
 
@@ -120,10 +142,13 @@ def opt_step():
     for _ in range(batch_per_epoch):
         delays = (
             tf.random.uniform(
-                [delay_per_batch], maxval=SAMPLE_RATE + adv_chunk_length, dtype=tf.int32
+                [delay_per_batch], maxval=SAMPLE_RATE - adv_chunk_length, dtype=tf.int32
             )
             // adv_delay_interval
         ) * adv_delay_interval
+        # delays = tf.constant(
+        #     range(0, zero_length + 1, adv_delay_interval)
+        # )
         opt.minimize(lambda: loss_fn(delays), [adv])
 
 
@@ -136,7 +161,7 @@ def opt_loop():
         print(f"epoch = {epoch_count}, loss = {last_loss}")
         print(f"norm = {tf.keras.losses.mse(tf.zeros([adv.shape[0]]), adv)}")
         print(
-            f"train_acc = {accuracy(x_mat, yi)}, val_acc = {accuracy(val_x_mat, val_yi)}"
+            f"train_acc = {accuracy(x_mat, yi)}, val_acc = {accuracy(val_x_mat, val_yi)}, val_acc2 = {accuracy(val_x_mat, val_yi, adv_delay_interval2)}"
         )
         epoch_count += 1
         if (
@@ -150,22 +175,7 @@ def opt_loop():
 opt_loop()
 
 
-result = music + tf.concat(
-    [
-        *[
-            tf.concat(
-                [
-                    tf.zeros([SAMPLE_RATE]),
-                    adv[i * adv_chunk_length : (i + 1) * adv_chunk_length],
-                ],
-                axis=0,
-            )
-            for i in range(chunk_count)
-        ],
-        tf.zeros([SAMPLE_RATE]),
-    ],
-    axis=0,
-)
 tf.io.write_file(
-    str(perturbated_path), tf.audio.encode_wav(tf.expand_dims(result, -1), SAMPLE_RATE)
+    str(perturbated_path),
+    tf.audio.encode_wav(tf.expand_dims(underlay_total(), -1), SAMPLE_RATE),
 )
