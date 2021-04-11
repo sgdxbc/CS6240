@@ -63,6 +63,9 @@ def underlay_total():
     )
 
 
+last_loss = tf.zeros([])
+
+
 def loss_fn(delays):
     dist_mean = []
     for chunk_index in range(chunk_count):
@@ -89,38 +92,15 @@ def accuracy(x_mat, yi, interval=adv_delay_interval):
     return tf.math.reduce_mean(accuracy_list)
 
 
-def opt_step():
-    for _ in range(batch_per_epoch):
-        delays = (
-            tf.random.uniform(
-                [delay_per_batch], maxval=SAMPLE_RATE - adv_chunk_length, dtype=tf.int32
-            )
-            // adv_delay_interval
-        ) * adv_delay_interval
-        opt.minimize(lambda: loss_fn(delays), [adv])
-
-
-def opt_loop():
-    losses = []
-    epoch_count = 0
-    while True:
-        opt_step()
-        losses.append(last_loss)
-        print(f"epoch = {epoch_count}, loss = {last_loss}")
-        print(f"norm = {tf.keras.losses.mse(tf.zeros([adv.shape[0]]), adv)}")
-        print(
-            f"train_acc = {accuracy(x_mat, yi)}, val_acc = {accuracy(val_x_mat, val_yi)}, val_acc2 = {accuracy(val_x_mat, val_yi, adv_delay_interval2)}"
-        )
-        epoch_count += 1
-        if (
-            len(losses) >= stop_when_no_progress_in
-            and tf.math.reduce_min(losses[-stop_when_no_progress_in:])
-            == losses[-stop_when_no_progress_in]
-        ):
-            break
-
-
-opt_loop()
+opt_loop(
+    loss_fn,
+    adv,
+    accuracy,
+    lambda: last_loss,
+    SAMPLE_RATE - adv_chunk_length,
+    adv_delay_interval,
+    [adv_delay_interval, sample_interval],
+)
 
 
 tf.io.write_file(

@@ -12,6 +12,8 @@ def decode_audio(audio_binary, check=False):
     if check:
         assert sample_rate == SAMPLE_RATE, f"sample_rate: {sample_rate}"
     waveform = tf.squeeze(audio, axis=-1)
+    if waveform.shape[0] >= SAMPLE_RATE:
+        return waveform
     # Padding for files with less than 16000 samples
     zero_padding = tf.zeros([SAMPLE_RATE] - tf.shape(waveform), dtype=tf.float32)
 
@@ -69,4 +71,46 @@ def pred(x):
     return model(tf.expand_dims(extract_features(x), -1), training=False)
 
 
-last_loss = tf.zeros([])
+def opt_step(delay_maxval, interval, loss_fn, adv):
+    for _ in range(batch_per_epoch):
+        delays = (
+            tf.random.uniform([batch_size], maxval=delay_maxval, dtype=tf.int32)
+            // interval
+        ) * interval
+        opt.minimize(lambda: loss_fn(delays), [adv])
+
+
+stop_when_no_progress_in = 20
+
+
+def opt_loop(
+    loss_fn,
+    adv,
+    accuracy,
+    epoch_loss,
+    delay_maxval,
+    train_interval=sample_interval,
+    val_intervals=None,
+):
+    losses = []
+    epoch_count = 0
+    while True:
+        opt_step(delay_maxval, train_interval, loss_fn, adv)
+        losses.append(epoch_loss())
+        print(f"epoch = {epoch_count}, loss = {epoch_loss()}")
+        print(f"norm = {tf.keras.losses.mse(tf.zeros([adv.shape[0]]), adv)}")
+        if val_intervals is None:
+            print(
+                f"train_acc = {accuracy(x_mat, yi)}, val_acc = {accuracy(val_x_mat, val_yi)}"
+            )
+        else:
+            print(
+                f"train_acc = {accuracy(x_mat, yi)}, val_acc = {[accuracy(val_x_mat, val_yi, interval).numpy() for interval in val_intervals]}"
+            )
+        epoch_count += 1
+        if (
+            len(losses) >= stop_when_no_progress_in
+            and tf.math.reduce_min(losses[-stop_when_no_progress_in:])
+            == losses[-stop_when_no_progress_in]
+        ):
+            break
