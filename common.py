@@ -88,6 +88,7 @@ def opt_loop(
     delay_maxval,
     train_interval=sample_interval,
     val_intervals=None,
+    max_epoch=None,
 ):
     losses = []
     epoch_count = 0
@@ -105,6 +106,9 @@ def opt_loop(
                 f"train_acc = {accuracy(x_mat, yi, train_interval)}, val_acc = {[accuracy(val_x_mat, val_yi, interval).numpy() for interval in val_intervals]}"
             )
         epoch_count += 1
+        if max_epoch is not None and epoch_count > max_epoch:
+            print('EPOCH CAP REACHED')
+            break
         if (
             len(losses) >= stop_when_stable_in
             and tf.math.reduce_std(losses[-stop_when_stable_in:]) < stable_std

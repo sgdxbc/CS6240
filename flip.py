@@ -34,14 +34,19 @@ def loss_fn(delays):
 
 def accuracy(x_mat, yi):
     accuracy_list = []
+    biacclist = ([], [])
     for delay in range(0, SAMPLE_RATE - adv_sample_number, sample_interval):
         xx = x_mat + underlay_mask([delay], x_mat.shape[0])
         p = tf.argmax(pred(xx), axis=1)
+        a = p == yi
         accuracy_list.append(tf.math.count_nonzero(p == yi) / len(yi))
+        biacclist[0].append(tf.math.count_nonzero(a[:a.shape[0] // 2]) / len(yi) * 2)
+        biacclist[1].append(tf.math.count_nonzero(a[a.shape[0] // 2:]) / len(yi) * 2)
+    print(tf.math.reduce_mean(biacclist[0]).numpy(), tf.math.reduce_mean(biacclist[1]).numpy())
     return tf.math.reduce_mean(accuracy_list)
 
 
-opt_loop(loss_fn, adv, accuracy, lambda: last_loss, SAMPLE_RATE - adv_sample_number)
+opt_loop(loss_fn, adv, accuracy, lambda: last_loss, SAMPLE_RATE - adv_sample_number, max_epoch=200)
 
 tf.io.write_file(
     str(adv_path), tf.audio.encode_wav(tf.expand_dims(adv, -1), SAMPLE_RATE)
