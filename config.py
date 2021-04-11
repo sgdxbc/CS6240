@@ -47,7 +47,7 @@ music_settings = dict(
     perturbation_chunk_length=50 * (SAMPLE_RATE // 1000),
     chunk_count=3,
     output_path=current_path / "pert.wav",
-    music_path=current_path / "underlay.wav",
+    music_path=current_path / "60bpm-200ms-400ms.wav",
 )
 
 if env == "production":
