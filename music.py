@@ -9,7 +9,6 @@ chunk_count = music_settings["chunk_count"]
 adv_delay_interval = adv_chunk_length
 adv_delay_interval2 = sample_interval
 delay_per_batch = batch_size
-stop_when_no_progress_in = 20
 
 
 # |<------------------last chuck------------------>|<-SAMPLE_RATE - adv_chuck_length->|
@@ -77,7 +76,7 @@ def loss_fn(delays):
     return last_loss
 
 
-def accuracy(x_mat, yi, interval=adv_delay_interval):
+def accuracy(x_mat, yi, interval):
     accuracy_list = []
     underlay = underlay_total()
     for delay in range(0, underlay.shape[0] - SAMPLE_RATE, interval):

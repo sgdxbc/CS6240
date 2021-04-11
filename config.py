@@ -14,7 +14,7 @@ data_dir = current_path / "data" / "mini_speech_commands"
 # list of (<what command we want to be misunderstood>, <what it should be understood>)
 target_map = [("left", "right")]
 # how many times we care loudness more than accuracy
-alpha = 1.0
+alpha = 50.0
 SAMPLE_RATE = 16 * 1000
 sample_interval = 10 * (SAMPLE_RATE // 1000)
 
@@ -43,7 +43,7 @@ flipping_settings = dict(
 # music attack
 ###
 music_settings = dict(
-    perturbation_chunk_length=50 * (SAMPLE_RATE // 1000),
+    perturbation_chunk_length=10 * (SAMPLE_RATE // 1000),
     chunk_count=3,
     output_path=current_path / "pert.wav",
     music_path=current_path / "underlay.wav",

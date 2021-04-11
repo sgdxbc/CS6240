@@ -105,7 +105,7 @@ def opt_loop(
             )
         else:
             print(
-                f"train_acc = {accuracy(x_mat, yi)}, val_acc = {[accuracy(val_x_mat, val_yi, interval).numpy() for interval in val_intervals]}"
+                f"train_acc = {accuracy(x_mat, yi, train_interval)}, val_acc = {[accuracy(val_x_mat, val_yi, interval).numpy() for interval in val_intervals]}"
             )
         epoch_count += 1
         if (

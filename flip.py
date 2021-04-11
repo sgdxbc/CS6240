@@ -1,139 +1,47 @@
-from collections import deque
 import tensorflow as tf
 from common import *
 
-train_commands_per_class = train_count
-val_commands_per_class = val_count
 adv_sample_number = flipping_settings["perturbation_length"]
-adv_delay_interval = sample_interval
-delay_sample_number_per_batch = batch_size
-stop_when_no_progress_in = 20
 adv_path = flipping_settings["output_path"]
-
-physical_devices = tf.config.list_physical_devices("GPU")
-for i in range(len(physical_devices)):
-    tf.config.experimental.set_memory_growth(physical_devices[i], True)
-
-commands = get_commands(data_dir)
-model = tf.keras.models.load_model(str(model_path))
-mix_per_audio = (SAMPLE_RATE - adv_sample_number) // adv_delay_interval
-audio_map = {
-    origin: [
-        decode_audio(tf.io.read_file(filename))
-        for i, filename in enumerate(tf.io.gfile.glob(str(data_dir / origin) + "/*"))
-        if i < train_commands_per_class + val_commands_per_class
-    ]
-    for origin, _ in target_map
-}
-
-adv = tf.Variable(tf.random.normal([adv_sample_number]))
-
-xs, ys, val_xs = [], [], []
-val_yi = []
-for origin, target in target_map:
-    for index, audio in enumerate(audio_map[origin]):
-        if index < train_commands_per_class:
-            xs.append(audio)
-            ys.append(commands == target)
-        else:
-            val_xs.append(audio)
-            val_yi.append(tf.argmax(commands == target))
-
-x_mat = tf.tile(tf.stack(xs), [delay_sample_number_per_batch, 1])
-y_mat = tf.tile(tf.stack(ys), [delay_sample_number_per_batch, 1])
-val_x_mat = tf.stack(val_xs)
-val_yi = tf.convert_to_tensor(val_yi)
-
-delays_of_this_batch = None
+adv = tf.Variable(tf.zeros([adv_sample_number]))
 
 
-def mix(x_mat):
-    padded = tf.stack(
+def underlay_mask(delays, count):
+    group = tf.stack(
         [
             tf.roll(
                 tf.concat([adv, tf.zeros([SAMPLE_RATE - adv_sample_number])], axis=0),
                 shift=delay,
                 axis=0,
             )
-            for delay in delays_of_this_batch
+            for delay in delays
         ]
     )
-    return x_mat + tf.repeat(
-        padded, repeats=x_mat.shape[0] // delays_of_this_batch.shape[0], axis=0
-    )
+    return tf.repeat(group, repeats=count, axis=0)
 
 
-def pred(mix):
-    return model(tf.expand_dims(extract_features(mix), -1), training=False)
+last_loss = tf.zeros([])
 
 
-def loss_fn():
-    x, y = mix(x_mat), y_mat
-    dist = tf.keras.losses.mse(y, pred(x))
+def loss_fn(delays):
+    xx, yy = xx_mat + underlay_mask(delays, x_mat.shape[0]), yy_mat
+    dist = tf.keras.losses.mse(yy, pred(xx))
     norm = tf.keras.losses.mse(tf.zeros([adv_sample_number]), adv)
-    return tf.math.reduce_mean(dist) + alpha * norm
+    global last_loss
+    last_loss = tf.math.reduce_mean(dist) + alpha * norm
+    return last_loss
 
 
-def accuracy(yi, x):
-    truth, predicate = yi, tf.argmax(pred(x), axis=1)
-    return len(truth[truth == predicate]) / len(truth)
+def accuracy(x_mat, yi):
+    accuracy_list = []
+    for delay in range(0, SAMPLE_RATE - adv_sample_number, sample_interval):
+        xx = x_mat + underlay_mask([delay], x_mat.shape[0])
+        p = tf.argmax(pred(xx), axis=1)
+        accuracy_list.append(tf.math.count_nonzero(p == yi) / len(yi))
+    return tf.math.reduce_mean(accuracy_list)
 
 
-opt = tf.keras.optimizers.Adam()
-
-
-def opt_step():
-    global delays_of_this_batch
-    for _ in range(batch_per_epoch):
-        delays_of_this_batch = (
-            tf.random.uniform(
-                [delay_sample_number_per_batch],
-                maxval=SAMPLE_RATE - adv_sample_number,
-                dtype=tf.int32,
-            )
-            // adv_delay_interval
-            * adv_delay_interval
-        )
-        # for i in range(0, SAMPLE_RATE - adv_sample_number, delay_sample_number_per_batch):
-        #     j = min(i + delay_sample_number_per_batch, SAMPLE_RATE - adv_sample_number)
-        #     delays_of_this_batch = tf.convert_to_tensor(range(i, j))
-        opt.minimize(loss_fn, [adv])
-    return loss_fn()
-
-
-def opt_loop():
-    train_yi = tf.argmax(y_mat[: train_commands_per_class * len(target_map)], axis=1)
-    prev_loss = deque()
-    for i in range(1000000):
-        loss = opt_step()
-        prev_loss.append(float(loss.numpy()))
-        if len(prev_loss) > stop_when_no_progress_in:
-            prev_loss.popleft()
-            if tf.math.reduce_min(prev_loss) == prev_loss[0]:
-                break
-        if i % 1 == 0:
-            print(f"i = {i}, loss = {loss.numpy()}")
-            norm = tf.keras.losses.mse(tf.zeros([adv_sample_number]), adv)
-            print(f"norm = {norm.numpy()}")
-
-            train_acc_list, val_acc_list = [], []
-            for delay_step in range(mix_per_audio):
-                global delays_of_this_batch
-                delays_of_this_batch = tf.convert_to_tensor(
-                    [delay_step * adv_delay_interval]
-                )
-                train_mixed, val_mixed = (
-                    mix(x_mat[: train_commands_per_class * len(target_map)]),
-                    mix(val_x_mat),
-                )
-                train_acc_list.append(accuracy(train_yi, train_mixed))
-                val_acc_list.append(accuracy(val_yi, val_mixed))
-            print(
-                f"acc(train) = {tf.math.reduce_mean(train_acc_list)}, acc(val) = {tf.math.reduce_mean(val_acc_list)}"
-            )
-
-
-opt_loop()
+opt_loop(loss_fn, adv, accuracy, lambda: last_loss, SAMPLE_RATE - adv_sample_number)
 
 tf.io.write_file(
     str(adv_path), tf.audio.encode_wav(tf.expand_dims(adv, -1), SAMPLE_RATE)
