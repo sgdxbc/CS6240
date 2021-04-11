@@ -1,24 +1,15 @@
 from pathlib import Path
 import tensorflow as tf
-from utils import *
+from common import *
 
 
-data_dir = Path() / "data" / "mini_speech_commands"
-model_path = Path() / "classifier_model_45"
-music_path = Path() / "underlay.wav"
-perturbated_path = Path() / "pert.wav"
-target_map = [("left", "right")]
-train_count = 1
-val_count = 10
-alpha = 1.0
-adv_chunk_length = 200 * (SAMPLE_RATE // 1000)
-chunk_count = 3
-# adv_delay_interval = 10 * (SAMPLE_RATE // 1000)
+music_path = music_settings["music_path"]
+perturbated_path = music_settings["output_path"]
+adv_chunk_length = music_settings["perturbation_chunk_length"]
+chunk_count = music_settings["chunk_count"]
 adv_delay_interval = adv_chunk_length
-adv_delay_interval2 = 10 * (SAMPLE_RATE // 1000)
-delay_per_batch = 2
-batch_per_epoch = 10
-opt = tf.keras.optimizers.Adam()
+adv_delay_interval2 = sample_interval
+delay_per_batch = batch_size
 stop_when_no_progress_in = 20
 
 

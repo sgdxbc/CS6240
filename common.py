@@ -1,13 +1,12 @@
 import tensorflow as tf
 import numpy as np
+from config import *
 
 
-SAMPLE_RATE = 16000
-
-
-def decode_audio(audio_binary):
+def decode_audio(audio_binary, check=False):
     audio, sample_rate = tf.audio.decode_wav(audio_binary)
-    # tf.cond(sample_rate == SAMPLE_RATE, true_fn=lambda: None)
+    if check:
+        assert sample_rate == SAMPLE_RATE, f"sample_rate: {sample_rate}"
     waveform = tf.squeeze(audio, axis=-1)
     # Padding for files with less than 16000 samples
     zero_padding = tf.zeros([SAMPLE_RATE] - tf.shape(waveform), dtype=tf.float32)

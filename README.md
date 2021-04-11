@@ -1,16 +1,9 @@
 # Project setup
 
-Follow [pip setup](https://www.tensorflow.org/install/pip). Notice: CUDA version must be 11.0, not the latest.
-
-To train audio command classifier:
-* Open `train.py`.
-* Edit `seed` and `save_path` near the top of the code.
-* Run `python train.py`.
-
-To generate adversarial sample against trained classifier:
-* Open `generate.py`.
-* Edit parameters at the top as needed and run.
-
-The predict and mixing script is been refactoring.
+* Install Tensorflow 2.3 with CUDA 10.1, cuDNN version 7.
+* Edit `config.py` or create `config_production.py` to override.
+* Use scripts:
+    * `train.py` to train a CNN classifier to be attacked.
+    * `flip.py` and `music.py` to generate attacking samples.
 
 Work in progress.

@@ -1,22 +1,15 @@
 from pathlib import Path
 from collections import deque
 import tensorflow as tf
-from utils import *
+from common import *
 
-# *** Configuration
-data_dir = Path() / "data" / "mini_speech_commands"
-model_path = Path() / "classifier_model_44"
-target_map = [("up", "down"), ("down", "up")]
-train_commands_per_class = 200
-val_commands_per_class = 10
-alpha = 1.0
-adv_sample_number = 600 * (SAMPLE_RATE // 1000)
-adv_delay_interval = 10 * (SAMPLE_RATE // 1000)
-delay_sample_number_per_batch = 20  # linear increase memory
-batch_per_epoch = 500 // delay_sample_number_per_batch
+train_commands_per_class = train_count
+val_commands_per_class = val_count
+adv_sample_number = flipping_settings["perturbation_length"]
+adv_delay_interval = sample_interval
+delay_sample_number_per_batch = batch_size
 stop_when_no_progress_in = 20
-adv_path = Path() / "adv.wav"
-# *** Configuration End
+adv_path = flipping_settings["output_path"]
 
 physical_devices = tf.config.list_physical_devices("GPU")
 for i in range(len(physical_devices)):
@@ -79,10 +72,7 @@ def loss_fn():
     x, y = mix(x_mat), y_mat
     dist = tf.keras.losses.mse(y, pred(x))
     norm = tf.keras.losses.mse(tf.zeros([adv_sample_number]), adv)
-    return (
-        tf.math.reduce_mean(dist)
-        + alpha * norm
-    )
+    return tf.math.reduce_mean(dist) + alpha * norm
 
 
 def accuracy(yi, x):
@@ -105,9 +95,9 @@ def opt_step():
             // adv_delay_interval
             * adv_delay_interval
         )
-    # for i in range(0, SAMPLE_RATE - adv_sample_number, delay_sample_number_per_batch):
-    #     j = min(i + delay_sample_number_per_batch, SAMPLE_RATE - adv_sample_number)
-    #     delays_of_this_batch = tf.convert_to_tensor(range(i, j))
+        # for i in range(0, SAMPLE_RATE - adv_sample_number, delay_sample_number_per_batch):
+        #     j = min(i + delay_sample_number_per_batch, SAMPLE_RATE - adv_sample_number)
+        #     delays_of_this_batch = tf.convert_to_tensor(range(i, j))
         opt.minimize(loss_fn, [adv])
     return loss_fn()
 

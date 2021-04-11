@@ -3,6 +3,6 @@ data
 .ipynb_checkpoints
 classifier_model*
 *.wav
-!underlay.wav
 *.pyc
 .vscode
+config_production.py
