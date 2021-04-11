@@ -80,9 +80,6 @@ def opt_step(delay_maxval, interval, loss_fn, adv):
         opt.minimize(lambda: loss_fn(delays), [adv])
 
 
-stop_when_no_progress_in = 20
-
-
 def opt_loop(
     loss_fn,
     adv,
@@ -109,8 +106,7 @@ def opt_loop(
             )
         epoch_count += 1
         if (
-            len(losses) >= stop_when_no_progress_in
-            and tf.math.reduce_min(losses[-stop_when_no_progress_in:])
-            == losses[-stop_when_no_progress_in]
+            len(losses) >= stop_when_stable_in
+            and tf.math.reduce_std(losses[-stop_when_stable_in:]) < stable_std
         ):
             break

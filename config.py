@@ -29,7 +29,7 @@ batch_per_epoch = 80 // batch_size
 
 opt = tf.keras.optimizers.Adam()
 stop_when_stable_in = 20  # epoches
-stable_std = 1e-7
+stable_std = 1e-5
 
 ###
 # flipping attack
@@ -43,7 +43,7 @@ flipping_settings = dict(
 # music attack
 ###
 music_settings = dict(
-    perturbation_chunk_length=10 * (SAMPLE_RATE // 1000),
+    perturbation_chunk_length=50 * (SAMPLE_RATE // 1000),
     chunk_count=3,
     output_path=current_path / "pert.wav",
     music_path=current_path / "underlay.wav",
