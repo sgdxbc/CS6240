@@ -1,4 +1,3 @@
-from pathlib import Path
 import tensorflow as tf
 from common import *
 
@@ -13,26 +12,11 @@ delay_per_batch = batch_size
 stop_when_no_progress_in = 20
 
 
-physical_devices = tf.config.list_physical_devices("GPU")
-for i in range(len(physical_devices)):
-    tf.config.experimental.set_memory_growth(physical_devices[i], True)
-
-commands = get_commands(data_dir)
-model = tf.keras.models.load_model(str(model_path))
-music, sample_rate = tf.audio.decode_wav(tf.io.read_file(str(music_path)))
-assert sample_rate == SAMPLE_RATE
-music = tf.cast(tf.squeeze(music, axis=-1), tf.float32)
 # |<------------------last chuck------------------>|<-SAMPLE_RATE - adv_chuck_length->|
 # |<-SAMPLE_RATE - adv_chuck_length->|<-adv_chuck->|
-music = music[: chunk_count * SAMPLE_RATE + (SAMPLE_RATE - adv_chunk_length)]
-audio_map = {
-    origin: [
-        decode_audio(tf.io.read_file(filename))
-        for i, filename in enumerate(tf.io.gfile.glob(str(data_dir / origin) + "/*"))
-        if i < train_count + val_count
-    ]
-    for origin, _ in target_map
-}
+music = decode_audio(tf.io.read_file(str(music_path)))[
+    : chunk_count * SAMPLE_RATE + (SAMPLE_RATE - adv_chunk_length)
+]
 
 # adv = tf.Variable(tf.random.normal([adv_chunk_length * chunk_count]))
 adv = tf.Variable(tf.zeros([adv_chunk_length * chunk_count]))
@@ -79,30 +63,6 @@ def underlay_total():
     )
 
 
-xs, ys, val_xs, val_yi = [], [], [], []
-for origin, target in target_map:
-    for index, audio in enumerate(audio_map[origin]):
-        if index < train_count:
-            xs.append(audio)
-            ys.append(tf.cast(commands == target, dtype=tf.float32))
-        else:
-            val_xs.append(audio)
-            val_yi.append(tf.argmax(commands == target))
-
-x_mat, y_mat = tf.stack(xs), tf.stack(ys)
-yi = tf.argmax(y_mat, axis=1)
-xx_mat = tf.tile(x_mat, [delay_per_batch, 1])
-yy_mat = tf.tile(y_mat, [delay_per_batch, 1])
-val_x_mat, val_yi = tf.stack(val_xs), tf.stack(val_yi)
-
-
-def pred(x):
-    return model(tf.expand_dims(extract_features(x), -1), training=False)
-
-
-last_loss = tf.zeros([])
-
-
 def loss_fn(delays):
     dist_mean = []
     for chunk_index in range(chunk_count):
@@ -137,9 +97,6 @@ def opt_step():
             )
             // adv_delay_interval
         ) * adv_delay_interval
-        # delays = tf.constant(
-        #     range(0, zero_length + 1, adv_delay_interval)
-        # )
         opt.minimize(lambda: loss_fn(delays), [adv])
 
 

@@ -16,7 +16,7 @@ target_map = [("up", "down"), ("down", "up")]
 # how many times we care loudness more than accuracy
 alpha = 1.0
 SAMPLE_RATE = 16 * 1000
-sample_interval = 1 * (SAMPLE_RATE // 1000)
+sample_interval = 10 * (SAMPLE_RATE // 1000)
 
 ## graphic card memory requirement ~ len(target_map) * train_count * batch_size
 # training/validation audio from each class of target_map
