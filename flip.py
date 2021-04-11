@@ -26,9 +26,16 @@ last_loss = tf.zeros([])
 def loss_fn(delays):
     xx, yy = xx_mat + underlay_mask(delays, x_mat.shape[0]), yy_mat
     dist = tf.keras.losses.mse(yy, pred(xx))
+    dist_list = []
+    for i in range(len(target_map)):
+        dist_list.append(
+            tf.match.reduce_mean(dist[i * train_count : (i + 1) * train_count])
+        )
+    dist_sum = tf.math.reduce_mean(dist_list)
+    dist_diff = tf.math.reduce_std(dist_list)
     norm = tf.keras.losses.mse(tf.zeros([adv_sample_number]), adv)
     global last_loss
-    last_loss = tf.math.reduce_mean(dist) + alpha * norm
+    last_loss = dist_sum + beta * dist_diff + alpha * norm
     return last_loss
 
 

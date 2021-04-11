@@ -14,7 +14,8 @@ data_dir = current_path / "data" / "mini_speech_commands"
 # list of (<what command we want to be misunderstood>, <what it should be understood>)
 target_map = [("left", "right")]
 # how many times we care loudness more than accuracy
-alpha = 50.0
+alpha = 1.0
+beta = 10.0
 SAMPLE_RATE = 16 * 1000
 sample_interval = 10 * (SAMPLE_RATE // 1000)
 
