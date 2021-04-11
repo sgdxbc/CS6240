@@ -27,9 +27,9 @@ def loss_fn(delays):
     xx, yy = xx_mat + underlay_mask(delays, x_mat.shape[0]), yy_mat
     dist = tf.keras.losses.mse(yy, pred(xx))
     dist_list = []
-    for i in range(len(target_map)):
+    for i in range(dist.shape[0] // train_count):
         dist_list.append(
-            tf.match.reduce_mean(dist[i * train_count : (i + 1) * train_count])
+            tf.math.reduce_mean(dist[i * train_count : (i + 1) * train_count])
         )
     dist_sum = tf.math.reduce_mean(dist_list)
     dist_diff = tf.math.reduce_std(dist_list)

@@ -12,7 +12,7 @@ if (current_path / "config_production.py").exists():
 model_path = current_path / "classifier_model_42"
 data_dir = current_path / "data" / "mini_speech_commands"
 # list of (<what command we want to be misunderstood>, <what it should be understood>)
-target_map = [("left", "right")]
+target_map = [("left", "right"), ("right", "left")]
 # how many times we care loudness more than accuracy
 alpha = 1.0
 beta = 10.0
