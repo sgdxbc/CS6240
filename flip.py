@@ -4,6 +4,8 @@ from common import *
 adv_sample_number = flipping_settings["perturbation_length"]
 adv_path = flipping_settings["output_path"]
 adv = tf.Variable(tf.zeros([adv_sample_number]))
+if len(target_map) == 1:
+    beta = 0.0
 
 
 def underlay_mask(delays, count):
@@ -31,6 +33,7 @@ def loss_fn(delays):
         dist_list_list[i % len(target_map)].append(
             tf.math.reduce_mean(dist[i * train_count : (i + 1) * train_count])
         )
+    # print(dist_list_list)
     dist_list = [tf.math.reduce_mean(sublist) for sublist in dist_list_list]
     dist_sum = tf.math.reduce_mean(dist_list)
     dist_diff = tf.math.reduce_std(dist_list)
