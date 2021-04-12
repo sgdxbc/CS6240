@@ -3,7 +3,9 @@ from common import *
 
 adv_sample_number = flipping_settings["perturbation_length"]
 adv_path = flipping_settings["output_path"]
-adv = tf.Variable(tf.zeros([adv_sample_number]))
+adv_audio = decode_audio(tf.io.read_file(str(adv_path)))
+#adv = tf.Variable(tf.zeros([adv_sample_number]))
+adv = tf.Variable(adv_audio[:adv_sample_number])
 if len(target_map) == 1:
     beta = 0.0
 
@@ -57,8 +59,8 @@ def accuracy(x_mat, yi):
     return tf.math.reduce_mean(accuracy_list)
 
 
-opt_loop(loss_fn, adv, accuracy, lambda: last_loss, SAMPLE_RATE - adv_sample_number, max_epoch=200)
+opt_loop(loss_fn, adv, accuracy, lambda: last_loss, SAMPLE_RATE - adv_sample_number, max_epoch=-1)
 
-tf.io.write_file(
-    str(adv_path), tf.audio.encode_wav(tf.expand_dims(adv, -1), SAMPLE_RATE)
-)
+#tf.io.write_file(
+#    str(adv_path), tf.audio.encode_wav(tf.expand_dims(adv, -1), SAMPLE_RATE)
+#)

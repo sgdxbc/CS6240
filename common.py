@@ -12,7 +12,7 @@ def decode_audio(audio_binary, check=False):
     if check:
         assert sample_rate == SAMPLE_RATE, f"sample_rate: {sample_rate}"
     waveform = tf.squeeze(audio, axis=-1)
-    if waveform.shape[0] >= SAMPLE_RATE:
+    if waveform.shape[0] is not None and waveform.shape[0] >= SAMPLE_RATE:
         return waveform
     # Padding for files with less than 16000 samples
     zero_padding = tf.zeros([SAMPLE_RATE] - tf.shape(waveform), dtype=tf.float32)
@@ -40,7 +40,8 @@ def get_commands(data_dir):
 
 
 commands = get_commands(data_dir)
-model = tf.keras.models.load_model(str(model_path))
+if model_path.exists():
+    model = tf.keras.models.load_model(str(model_path))
 audio_map = {
     origin: [
         decode_audio(tf.io.read_file(filename))
@@ -93,14 +94,14 @@ def opt_loop(
     losses = []
     epoch_count = 0
     while True:
+        if max_epoch is not None and epoch_count > max_epoch:
+            print('EPOCH CAP REACHED')
+            break
         opt_step(delay_maxval, train_interval, loss_fn, adv)
         losses.append(epoch_loss())
         print(f"epoch = {epoch_count}, loss = {epoch_loss()}")
         print(f"norm = {tf.keras.losses.mse(tf.zeros([adv.shape[0]]), adv)}")
         epoch_count += 1
-        if max_epoch is not None and epoch_count > max_epoch:
-            print('EPOCH CAP REACHED')
-            break
         if (
             len(losses) >= stop_when_stable_in
             and tf.math.reduce_std(losses[-stop_when_stable_in:]) < stable_std
