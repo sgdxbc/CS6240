@@ -97,14 +97,6 @@ def opt_loop(
         losses.append(epoch_loss())
         print(f"epoch = {epoch_count}, loss = {epoch_loss()}")
         print(f"norm = {tf.keras.losses.mse(tf.zeros([adv.shape[0]]), adv)}")
-        if val_intervals is None:
-            print(
-                f"train_acc = {accuracy(x_mat, yi)}, val_acc = {accuracy(val_x_mat, val_yi)}"
-            )
-        else:
-            print(
-                f"train_acc = {accuracy(x_mat, yi, train_interval)}, val_acc = {[accuracy(val_x_mat, val_yi, interval).numpy() for interval in val_intervals]}"
-            )
         epoch_count += 1
         if max_epoch is not None and epoch_count > max_epoch:
             print('EPOCH CAP REACHED')
@@ -114,3 +106,12 @@ def opt_loop(
             and tf.math.reduce_std(losses[-stop_when_stable_in:]) < stable_std
         ):
             break
+    if val_intervals is None:
+        print(
+            f"train_acc = {accuracy(x_mat, yi)}, val_acc = {accuracy(val_x_mat, val_yi)}"
+        )
+    else:
+        print(
+            f"train_acc = {accuracy(x_mat, yi, train_interval)}, val_acc = {[accuracy(val_x_mat, val_yi, interval).numpy() for interval in val_intervals]}"
+        )
+

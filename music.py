@@ -99,6 +99,7 @@ opt_loop(
     SAMPLE_RATE - adv_chunk_length,
     adv_delay_interval,
     [adv_delay_interval, sample_interval],
+    max_epoch=900,
 )
 
 
